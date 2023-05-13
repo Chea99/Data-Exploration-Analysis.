@@ -1,0 +1,112 @@
+---
+title: 'Write Up: Data Exploration Analysis'
+author: "Phanghouy Chea"
+date: '2023-05-09'
+output: html_document
+---
+
+## Research Question
+The College Scorecard was released at the start of September 2015. Among colleges that predominantly grant bachelor’s degrees, did the release of the Scorecard shift student interest to high-earnings colleges relative to low-earnings ones?
+
+## Library
+load all the library needed for the project
+
+```{r}
+library(tidyverse)
+library(fixest)
+library(jtools)
+library(readxl)
+library(dplyr)
+library(lubridate)
+library(vtable)
+library(ggplot2)
+library(etable)
+```
+
+## Read Clean_data CVS
+
+read the clean data by using read_cvs and see all the variation name
+I use sumtable() from vtable package to look at the distributions of the variables
+
+```{r}
+Clean_data <- read_csv("~/Desktop/Lab3_Rawdata/Clean_data.csv")
+#names(Clean_data)
+sumtable(Clean_data)
+```
+
+## rearrange the data
+
+I use drop_na() to drop rows containing missing value. Then, I rename high_income column to income_level in order to easy to read it. Since there are so many columns in the data set and I won’t be using for regression and analysis even after data cleaning, I only select some columns that are needed for this analysis, which are schname, unitid, median_earnings, standard index(index.s), after_release and income_level.
+
+```{r}
+Clean_data <- Clean_data %>% drop_na() 
+regression_data <- Clean_data %>% rename("income_level" = "high_income")
+regression_data <- regression_data %>% select(c(schname, unitid, median_earnings, index.s, date, after_release, income_level))
+show(regression_data)
+```
+
+## Difference in Differences Regression
+
+In this case, I think difference in differences regression model would work the best because it can control the time
+variable. Also, I want to add the interaction in the regression to see if the college changes from low-income to high-income and how it effect Scorecard on their indexes. Moreover, by using interaction term, it can let me examine whether or not the scorecard shift student interest towards high-earning colleges compared to low ones.
+
+## Summary table of mean of the index
+
+Using summary table of mean index to see if both group before and after release (group by after_release and income_level). So, I compare the means with two groups by only looking at the standard index. The result shows that for high earning college, mean index was 0.053 before the scorecard released in 2015, and about -0.229
+after the release. For low earning college, mean index was 0.0365 before the release and -0.157 after the release. This give me the hint that the index dropped after the release for both high/low earning groups.
+
+```{r}
+summary_regression_data <- regression_data %>% 
+  group_by(after_release, income_level) %>% 
+  summarize(index = mean(index.s), .groups = "drop")
+show(summary_regression_data)
+```
+
+## Perform a Regression
+The intercept coefficient shows what the mean index would be if all other variables are 0, which means high-income colleges had a mean index of .0529 before the release of the scorecard. The income_level. The Low coefficient shows that low-income colleges had a -.0164 lower index than the high-income colleges before the Scorecard. Since students are tend to seek for college degree so that can have a better paid job after graduate, it makes sense that higher income college tend to have more Google search than the lower income college before scored card release. 
+
+However, after the release of scorecard, the coefficient of after_releaseTRUE is (-0.2818) which mean it dropped by 0.2818. This means after scorescard was released, students likely to search less on high earning college compare to before realeasing the scorescard.
+
+The result opposite from what I have interpret above that higher income college tend to have more Google search than the lower income college, but instead, the search dropped after the release by 28.18%.The interaction term coefficient shows effect of the scorecard, as a college switches from high earning to low earning after release by 0.0885. This mean that the low earning college is about 8.85% higher than high earning college. 
+
+Therefore,the release of scorecard would shift student interest to high-earning colleges.
+
+```{r}
+regression_model <- feols(index.s ~ income_level*after_release, data = regression_data)
+etable(regression_model, digits = 4)
+
+```
+
+
+## Building the regression graph 
+
+I grouped up the data by income level and week in order to have more accurate trend of the indexes over time as well as building a lice looking line graph for the regression.
+
+```{r}
+regression_graph <- regression_data %>% 
+  group_by(income_level, week = floor_date(date, "week")) %>%
+  summarize(index.s = mean(index.s))
+
+
+ggplot(regression_graph, aes(x = week, y = index.s, color = income_level)) + 
+  geom_line() 
+
+```
+
+## Observation 
+
+From the graph, I see that both high earning and low earning college seem to have a similar trend. Both groups did not have much different indexes even before and after release. However, after the release of scorecard at the start of September 2015, the indexes tend to be slightly dropped. So, it seams that the release of the scorecard didn't cause a major impact on the indexes because the search for high earning college doesn’t increase, and low earning college has more search than high earning.
+
+This finding is opposite to the research hypothesis that scorecards would have a greater effect on high-earning colleges because it assume that after the release it would encourage or shift students' interest search for high-earning colleges. Therefore, the regression and the graph show that the release of the Scorecard doesn’t shift student interest to high-earnings colleges relative to low-earnings.
+
+Also, I noticed that around the middle of the year, it was a huge drop around those time. From my understanding, during April to June is the college decision time which when the students know whether or not they get in to the university so that the Google search on college would drop because they already applied for college and just wait for decision. Moreover, after those period, I see there was increasing in search because it is time for new student freshmen start looking for college. 
+
+From this observation, including time_variables like month of the year would help to capture any systematic effects that might be present due to seasonal factors. It also ensure that the estimates of the effects of other variables in the model are more accurate, by accounting for any systematic differences in search traffic that might be related to the month of year (before and after application process). In addition, I also want to consider other standard error adjustments, such as clustering the standard errors by week or month, to account for any potential heteroscedasticity in the data.
+
+## Real world interpretion: 
+
+There are many more factors that help students consider in choosing college such as major, location, tuition, acceptance rate, and other personal issue of each students. High earning college tend to have higher tuition and low acceptance rate which mean only students from higher income family can afford it and only smart students with high GPA or test score to get in. Other students who know that they don't have those privilege might seek for other college that match with their ability. Also, major is an important thing that students tends to think about because not all school has their preference major. More importantly, the location of the school. Students also consider about the school location and environment around there whether it is safe or not. Also, some good college that they prefer are out of state, they have to move and sometimes themselves or their family cannot afford to pay extra fee for living, food, and transportation which shift the students' choice to looking for college near by.  
+
+Also, it doesn't mean students who graduate from high earning college will guarantee in receiving high paid job because companies are looking for both who has have college degree as well as they tend to weight more on personal or work experience in order to get accept for the job. Even students who graduated from the same high earning college will get different pay in job based on their paste experience and professional in the specific job field. Therefore, the release
+of scorecards didn't have a big impact on students’ interest toward high-earning colleges.
+
