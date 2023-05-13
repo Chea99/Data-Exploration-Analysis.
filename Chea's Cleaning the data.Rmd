@@ -1,0 +1,103 @@
+---
+title: 'Data Exploration: Data Cleaning'
+author: "Phanghouy Chea"
+date: '2023-05-05'
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+### Load all the library needed
+
+```{r}
+library(tidyverse)
+library(purrr)
+library(fixest)
+library(readxl)
+library(dplyr)
+library(jtools)
+library(lubridate)
+```
+
+### Read and Upload Google Trends data from desktop
+
+```{r}
+list.files(path= "~/Desktop/Lab3_Rawdata")
+flist <-list.files(path= "~/Desktop/Lab3_Rawdata", full.names = TRUE, pattern = "trends")
+trendsData <- flist %>% 
+  map(read_csv) %>%
+  bind_rows()
+```
+
+### Uploading Scorecard data and id-name
+
+Read the data from: "Most+Recent+Cohorts+(Scorecard+Elements)" and I rename OPEID AND UNITID to lowercase for making column names more concise or easier to work with.
+Then read data from "id_name_link" and grouping the data by the "schname" column using the group_by() function.
+Next, adding a new column called "N" using the mutate() function, which counts the number of times each value of "schname" appears in the "id_name_link". 
+Then, I filter the data to only keep rows where the value of "N" is equal to 1, which ensures that each school name appears only once in the resulting data frame.
+
+```{r}
+scorecardData <-read_csv("~/Desktop/Lab3_Rawdata/Most+Recent+Cohorts+(Scorecard+Elements).csv")
+scorecardData <-rename(scorecardData, opeid = OPEID)
+scorecardData <-rename(scorecardData, unitid = UNITID)
+
+id_name_link <- read.csv("~/Desktop/Lab3_Rawdata/id_name_link.csv")
+id_name_link <- id_name_link %>%
+  group_by(schname) %>%
+  mutate(N=n()) %>%
+  filter(N==1)
+```
+
+#Joining data tables
+
+I combine the trend data and id_name_link by "schname" called data. Then, combine data and scorecardData by "unitid" called semiData.
+
+```{r}
+data <- trendsData %>%
+  left_join(id_name_link, by = "schname")
+semiData <- data %>%
+  left_join(scorecardData, by = "unitid")
+```
+
+### standardize index: (index-mean(index))/sd(index)
+
+I group the semiData by "keyword", and then I create a new column called ‘index.s’ to compare index score with standardized index data (index-index mean)/sd of index.
+
+```{r}
+finalData <- semiData %>%
+  group_by(keyword) %>%
+  mutate(index.s = (index - mean(index, na.rm = TRUE))/sd(index, na.rm = TRUE))
+```
+
+### Bachelor Data
+
+Since the research question focuses on predominantly bachelor’s degrees, so I only choose bachelor’s colleges data for the data frame. I also create a new date column by stringing the first week from ‘monthorweek’ column to leave the data level as a week per row per keyword. Moreover, I add a new column cal l"after_release" to see the release (that start from the beginning of Sept 2015) has shift the different. 
+
+```{r}
+bachelorData <- filter(finalData, PREDDEG == 3)
+bachelorData <- bachelorData %>%
+  mutate (date = str_sub(monthorweek, 1, 10)) %>%
+  mutate(date = ymd(date)) %>%
+  mutate(after_release = date > ymd ('2015-09-01'))
+```
+
+### Organize earnings using ifelse
+I found the average earning of students who graduate from bachelor degree is $59600 in 2022 (Forbes).
+Link:"https://www.forbes.com/advisor/student-loans/average-salary-college-graduates/".
+So, in this case I will consider over $59600 is high earning. The reason I did this because I want to differentiate between high and low earning college graduate. 
+
+```{r}
+bachelorData<-rename(bachelorData, 
+                     median_earnings = "md_earn_wne_p10-REPORTED-EARNINGS")
+bachelorData$high_income <-  ifelse(bachelorData$median_earnings > 59600, "High", "Low")
+```
+
+### save data into clean data
+
+Everything is all set, and I save the clean version of it by calling it "Clean_data" as cvs file. 
+
+```{r}
+write.csv(bachelorData, "~/Desktop/Lab3_Rawdata/Clean_data.csv")
+```
